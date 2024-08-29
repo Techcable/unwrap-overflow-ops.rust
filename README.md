@@ -1,7 +1,7 @@
 # unwrap-overflow-ops
 
-[![Crates.io Version](https://img.shields.io/crates/v/strict-overflow-ops?style=for-the-badge)](https://crates.io/crates/strict-overflow-ops)
-[![docs.rs](https://img.shields.io/docsrs/strict-overflow-ops?style=for-the-badge)](https://docs.rs/strict-overflow-ops)
+[![Crates.io Version](https://img.shields.io/crates/v/unwrap-overflow-ops?style=for-the-badge)](https://crates.io/crates/unwrap-overflow-ops)
+[![docs.rs](https://img.shields.io/docsrs/unwrap-overflow-ops?style=for-the-badge)](https://docs.rs/unwrap-overflow-ops)
 
 <!-- cargo-rdme start -->
 
