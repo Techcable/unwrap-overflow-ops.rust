@@ -1,0 +1,14 @@
+[package]
+name = "unwrap-overflow-ops"
+description = "arithmetic operations that always panic on overflow"
+repository = "https://github.com/Techcable/unwrap-overflow-ops.rust"
+license = "Apache-2.0 OR MIT"
+version = "0.1.0"
+edition = "2021"
+readme = "README.md"
+categories = ["mathematics", "no-std", "no-std::no-alloc", "rust-patterns"]
+keywords = ["strict-overflow-ops", "overflow", "unwrap", "panic", "checked-arithmetic"]
+
+
+[dependencies]
+paste = "1"
