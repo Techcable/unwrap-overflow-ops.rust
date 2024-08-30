@@ -26,6 +26,8 @@
 #![no_std]
 use core::fmt::Debug;
 
+use paste::paste;
+
 macro_rules! _stringify_or_default {
     (default: $default:tt; $val:ident) => {
         stringify!($val)
@@ -80,6 +82,40 @@ macro_rules! unwrap_num_ops {
     )*});
 }
 
+/// Marker type for a primitive integer.
+///
+/// ## Safety
+/// Guarenteed to be one of the builtin primitive integer types.
+///
+/// Methods are guarenteed to be implemented correctly.
+pub unsafe trait PrimInt:
+    Copy + Debug + Sized + Eq + PartialEq + internal::PrimIntInternal + sealed::Sealed
+{
+    /// Attempt to cast this integer into another type,
+    /// returning `None` if overflow occurs.
+    ///
+    /// This is equivalent to invoking the appropriate [`TryFrom`] implementation,
+    /// but returns an `Option` for consistency with the checked arithmetic methods.
+    #[inline]
+    #[must_use]
+    fn checked_cast<T: PrimInt>(self) -> Option<T> {
+        use self::internal::PrimIntInternal;
+        macro_rules! match_types {
+            ($src:expr, $dest:ident => $($size:literal),+) => (paste! {
+                match ($dest::BITS, $dest::SIGNED) {
+                    $(
+                        ($size, false) => $src.[<checked_as_u $size>]()?.bit_cast::<$dest>(),
+                        ($size, true) => $src.[<checked_as_i $size>]()?.bit_cast::<$dest>(),
+                    )*
+                    _ => unreachable!(),
+                }
+            });
+
+        }
+        Some(match_types!(self, T => 8, 16, 32, 64, 128))
+    }
+}
+
 /// An extension trait for arithmetic operations
 /// that are guaranteed to panic on overflow.
 ///
@@ -94,7 +130,7 @@ macro_rules! unwrap_num_ops {
 /// regardless of compiler settings and `cfg!(...)` flags.
 ///
 /// The correctness of these methods can be relied upon for memory safety.
-pub unsafe trait UnwrapOverflowOps: Copy + Debug + Sized + sealed::Sealed {
+pub unsafe trait UnwrapOverflowOps: PrimInt + sealed::Sealed {
     unwrap_num_ops! {
         add {
             arg: Self,
@@ -152,6 +188,52 @@ pub unsafe trait UnwrapOverflowOps: Copy + Debug + Sized + sealed::Sealed {
             basic_example: "assert_eq!(8i32.unwrap_pow(2), 64);",
             panic_example: "let _ = i32::MAX.unwrap_pow(2);",
         },
+    }
+
+    /// Cast to another integer type,
+    /// panicking if overflow occurs.
+    ///
+    /// Unlike the most other methods in this crate,
+    /// there is not currently a similar method in the standard library.
+    /// Casts are not offered as part of the
+    /// [`strict_overflow_ops` feature](https://github.com/rust-lang/rust/issues/118260)
+    ///
+    /// See also [`PrimInt::checked_cast`], which returns a `None` on overflow.
+    ///
+    /// # Panics
+    /// This function will always panic on overflow.
+    ///
+    /// # Examples
+    /// Basic usage:
+    /// ```
+    /// use unwrap_overflow_ops::*;
+    /// assert_eq!((-1i32).unwrap_cast::<i8>(), -1i8);
+    /// assert_eq!(i8::MIN.unwrap_cast::<i32>(), -128);
+    /// assert_eq!(i8::MAX.unwrap_cast::<u8>(), 127);
+    /// assert_eq!(i32::MAX.unwrap_cast::<u32>(), 2147483647u32);
+    /// ```
+    ///
+    /// The following will all panic:
+    /// ```should_panic
+    /// use unwrap_overflow_ops::*;
+    /// let _ = (-1i32).unwrap_cast::<u32>();
+    /// ```
+    /// ```should_panic
+    /// use unwrap_overflow_ops::*;
+    /// let _ = i32::MIN.unwrap_cast::<i16>();
+    /// ```
+    /// ```should_panic
+    /// use unwrap_overflow_ops::*;
+    /// let _ = (255u8).unwrap_cast::<i8>();
+    /// ```
+    #[inline]
+    #[must_use]
+    #[track_caller]
+    fn unwrap_cast<T: PrimInt>(self) -> T {
+        match self.checked_cast::<T>() {
+            Some(val) => val,
+            None => self::overflow_ops::cast(),
+        }
     }
 }
 
@@ -273,6 +355,7 @@ macro_rules! impl_signed_ints {
                 }
             }
         }
+        unsafe impl PrimInt for [<i $size>] {}
         impl sealed::Sealed for [<i $size>] {}
     )* });
 }
@@ -287,10 +370,64 @@ macro_rules! impl_unsigned_ints {
             type Signed = [<i $size>];
             common_methods_impl!(add_signed(Self::Signed) -> Self);
         }
+        unsafe impl PrimInt for [<u $size>] {}
         impl sealed::Sealed for [<u $size>] {}
     )* })
 }
 impl_unsigned_ints!(8, 16, 32, 64, 128, size);
+
+mod internal {
+    use paste::paste;
+
+    macro_rules! foreach_as_method {
+        (do $mode:tt) => (foreach_as_method! {
+            do $mode; for u8, u16, u32, u64, u128,
+            usize, i8, i16, i32, i64, i128, isize
+        });
+        (do impl; for $($target:ident),*) => (paste! {$(
+            #[inline]
+            fn [<checked_as_ $target>](self) -> Option<$target> {
+                $target::try_from(self).ok()
+            }
+        )*});
+        (do declare; for $($target:ident),*) => (paste! {$(
+            #[must_use]
+            fn [<checked_as_ $target>](self) -> Option<$target>;
+        )*});
+    }
+
+    /// Internal methods for primitive integers.
+    ///
+    /// ## Safety
+    /// Guarenteed to be implemented correctly.
+    pub unsafe trait PrimIntInternal: Sized + Copy {
+        const SIGNED: bool;
+        const BITS: u32;
+
+        #[inline]
+        fn bit_cast<T: PrimIntInternal>(self) -> T {
+            assert!(Self::BITS == T::BITS);
+            unsafe { core::mem::transmute_copy(&self) }
+        }
+
+        foreach_as_method!(do declare);
+    }
+    macro_rules! impl_primint_internal {
+        () => {
+            impl_primint_internal!(u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize);
+        };
+        ($($target:ident),+) => ($(
+            unsafe impl PrimIntInternal for $target {
+                #[allow(unused_comparisons)]
+                const SIGNED: bool = <$target>::MIN < 0;
+                const BITS: u32 = <$target>::BITS;
+
+                foreach_as_method!(do impl);
+            }
+        )*);
+    }
+    impl_primint_internal!();
+}
 
 mod sealed {
     pub trait Sealed {}
@@ -321,6 +458,7 @@ mod overflow_ops {
         shr => "shift right",
         shl => "shift left",
         pow => "take integer power",
+        cast => "cast integer",
     }
 
     // alias used by macros
