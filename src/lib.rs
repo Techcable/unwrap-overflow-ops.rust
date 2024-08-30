@@ -27,8 +27,12 @@
 use core::fmt::Debug;
 
 macro_rules! _stringify_or_default {
-    (default: $default:tt; $val:ident) => (stringify!($val));
-    (default: $default:tt;) => ($default);
+    (default: $default:tt; $val:ident) => {
+        stringify!($val)
+    };
+    (default: $default:tt;) => {
+        $default
+    };
 }
 
 macro_rules! unwrap_num_ops {
@@ -74,9 +78,7 @@ macro_rules! unwrap_num_ops {
         #[must_use = "this returns the result of the operation, without modifying the original"]
         fn [<unwrap_ $op>](self, $(arg: $arg)*) -> $res;
     )*});
-
 }
-
 
 /// An extension trait for arithmetic operations
 /// that are guaranteed to panic on overflow.
@@ -326,4 +328,3 @@ mod overflow_ops {
     pub use self::add as add_unsigned;
     pub use self::sub as sub_unsigned;
 }
-
