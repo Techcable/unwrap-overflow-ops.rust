@@ -159,7 +159,7 @@ pub unsafe trait UnwrapOverflowOps: Copy + Debug + Sized + sealed::Sealed {
 /// that are guaranteed to panic on overflow.
 ///
 /// This implements operations specific to signed integers,
-/// the [`UnwrapOverflowOps`] trait is for operations supported bya ll integers.
+/// the [`UnwrapOverflowOps`] trait is for operations supported by all integers.
 ///
 /// This is a polyfill for the [`strict_overflow_ops` feature].
 ///
